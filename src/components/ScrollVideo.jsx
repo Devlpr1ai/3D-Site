@@ -59,6 +59,12 @@ export default function ScrollVideo({ src, className = '' }) {
           doSeek()
         },
       })
+      const duration = video.duration
+      if (duration && !isNaN(duration)) {
+        const initialProgress = scrollTriggerInstance.progress || 0
+        currentTarget = Math.max(0.001, initialProgress * duration)
+        doSeek()
+      }
     }
 
     const onProgress = () => {
