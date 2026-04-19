@@ -11,6 +11,8 @@ export default function ScrollVideo({ src, className = '' }) {
   const [progress, setProgress] = useState(0)
   const [loaded, setLoaded] = useState(false)
 
+  const isHls = /\.m3u8(\?|$)/i.test(src || '')
+
   useEffect(() => {
     const video = videoRef.current
     if (!video || !src) return
@@ -19,6 +21,11 @@ export default function ScrollVideo({ src, className = '' }) {
     let scrollTriggerInstance = null
     let currentTarget = 0
     let seekPending = false
+    let cancelled = false
+
+    const markLoaded = () => {
+      if (!cancelled) setLoaded(true)
+    }
 
     const doSeek = () => {
       if (!video) return
@@ -40,9 +47,8 @@ export default function ScrollVideo({ src, className = '' }) {
       }
     }
 
-    const onCanPlay = () => setLoaded(true)
-
     const setupScrollTrigger = () => {
+      if (cancelled) return
       scrollTriggerInstance = ScrollTrigger.create({
         trigger: document.documentElement,
         start: 'top top',
@@ -57,8 +63,6 @@ export default function ScrollVideo({ src, className = '' }) {
       })
     }
 
-    const isHls = /\.m3u8(\?|$)/i.test(src)
-
     const onProgress = () => {
       const duration = video.duration
       if (!duration || isNaN(duration)) return
@@ -68,6 +72,11 @@ export default function ScrollVideo({ src, className = '' }) {
         const pct = Math.min(100, (bufferedEnd / duration) * 100)
         setProgress(Math.floor(pct))
       }
+    }
+
+    const onLoadedMetadata = () => {
+      setupScrollTrigger()
+      if (video.readyState >= 3) markLoaded()
     }
 
     if (isHls && Hls.isSupported()) {
@@ -94,17 +103,27 @@ export default function ScrollVideo({ src, className = '' }) {
       hls.on(Hls.Events.FRAG_BUFFERED, onProgress)
     } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
-      video.addEventListener('loadedmetadata', setupScrollTrigger)
+      video.load()
+      video.addEventListener('loadedmetadata', onLoadedMetadata)
       video.addEventListener('progress', onProgress)
     } else {
-      video.src = src
-      video.preload = 'auto'
-      video.addEventListener('loadedmetadata', setupScrollTrigger)
+      if (video.src !== new URL(src, window.location.href).href) {
+        video.src = src
+      }
+      video.load()
+      video.addEventListener('loadedmetadata', onLoadedMetadata)
       video.addEventListener('progress', onProgress)
     }
 
     video.addEventListener('seeked', onSeeked)
-    video.addEventListener('canplay', onCanPlay)
+    video.addEventListener('canplay', markLoaded)
+    video.addEventListener('canplaythrough', markLoaded)
+    video.addEventListener('loadeddata', markLoaded)
+
+    if (video.readyState >= 3) markLoaded()
+    if (!isNaN(video.duration) && video.duration > 0) {
+      setupScrollTrigger()
+    }
 
     const wrapper = wrapperRef.current
     const onMouseMove = (e) => {
@@ -122,13 +141,18 @@ export default function ScrollVideo({ src, className = '' }) {
     window.addEventListener('mousemove', onMouseMove)
 
     return () => {
+      cancelled = true
       window.removeEventListener('mousemove', onMouseMove)
       video.removeEventListener('seeked', onSeeked)
-      video.removeEventListener('canplay', onCanPlay)
+      video.removeEventListener('canplay', markLoaded)
+      video.removeEventListener('canplaythrough', markLoaded)
+      video.removeEventListener('loadeddata', markLoaded)
+      video.removeEventListener('loadedmetadata', onLoadedMetadata)
+      video.removeEventListener('progress', onProgress)
       if (scrollTriggerInstance) scrollTriggerInstance.kill()
       if (hls) hls.destroy()
     }
-  }, [src])
+  }, [src, isHls])
 
   return (
     <>
@@ -147,7 +171,7 @@ export default function ScrollVideo({ src, className = '' }) {
           muted
           playsInline
           preload="auto"
-          crossOrigin="anonymous"
+          {...(isHls ? { crossOrigin: 'anonymous' } : {})}
         />
       </div>
     </>
