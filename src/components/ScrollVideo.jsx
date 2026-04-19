@@ -42,13 +42,11 @@ export default function ScrollVideo({ src, className = '' }) {
     }
 
     const onSeeked = () => {
-      if (seekPending) {
-        doSeek()
-      }
+      if (seekPending) doSeek()
     }
 
     const setupScrollTrigger = () => {
-      if (cancelled) return
+      if (cancelled || scrollTriggerInstance) return
       scrollTriggerInstance = ScrollTrigger.create({
         trigger: document.documentElement,
         start: 'top top',
@@ -76,7 +74,11 @@ export default function ScrollVideo({ src, className = '' }) {
 
     const onLoadedMetadata = () => {
       setupScrollTrigger()
-      if (video.readyState >= 3) markLoaded()
+      if (video.readyState >= 2) markLoaded()
+    }
+
+    const onError = () => {
+      console.error('[ScrollVideo] video error', video.error)
     }
 
     if (isHls && Hls.isSupported()) {
@@ -101,29 +103,23 @@ export default function ScrollVideo({ src, className = '' }) {
       })
 
       hls.on(Hls.Events.FRAG_BUFFERED, onProgress)
-    } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src
-      video.load()
-      video.addEventListener('loadedmetadata', onLoadedMetadata)
-      video.addEventListener('progress', onProgress)
-    } else {
-      if (video.src !== new URL(src, window.location.href).href) {
-        video.src = src
-      }
-      video.load()
-      video.addEventListener('loadedmetadata', onLoadedMetadata)
-      video.addEventListener('progress', onProgress)
     }
 
+    video.addEventListener('loadedmetadata', onLoadedMetadata)
+    video.addEventListener('progress', onProgress)
     video.addEventListener('seeked', onSeeked)
     video.addEventListener('canplay', markLoaded)
     video.addEventListener('canplaythrough', markLoaded)
     video.addEventListener('loadeddata', markLoaded)
+    video.addEventListener('error', onError)
 
-    if (video.readyState >= 3) markLoaded()
-    if (!isNaN(video.duration) && video.duration > 0) {
-      setupScrollTrigger()
+    if (video.readyState >= 2) {
+      onLoadedMetadata()
     }
+
+    const safetyTimer = setTimeout(() => {
+      if (!cancelled) markLoaded()
+    }, 2000)
 
     const wrapper = wrapperRef.current
     const onMouseMove = (e) => {
@@ -142,13 +138,15 @@ export default function ScrollVideo({ src, className = '' }) {
 
     return () => {
       cancelled = true
+      clearTimeout(safetyTimer)
       window.removeEventListener('mousemove', onMouseMove)
+      video.removeEventListener('loadedmetadata', onLoadedMetadata)
+      video.removeEventListener('progress', onProgress)
       video.removeEventListener('seeked', onSeeked)
       video.removeEventListener('canplay', markLoaded)
       video.removeEventListener('canplaythrough', markLoaded)
       video.removeEventListener('loadeddata', markLoaded)
-      video.removeEventListener('loadedmetadata', onLoadedMetadata)
-      video.removeEventListener('progress', onProgress)
+      video.removeEventListener('error', onError)
       if (scrollTriggerInstance) scrollTriggerInstance.kill()
       if (hls) hls.destroy()
     }
@@ -171,6 +169,7 @@ export default function ScrollVideo({ src, className = '' }) {
           muted
           playsInline
           preload="auto"
+          src={isHls ? undefined : src}
           {...(isHls ? { crossOrigin: 'anonymous' } : {})}
         />
       </div>
