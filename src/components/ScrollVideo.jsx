@@ -57,7 +57,20 @@ export default function ScrollVideo({ src, className = '' }) {
       })
     }
 
-    if (Hls.isSupported()) {
+    const isHls = /\.m3u8(\?|$)/i.test(src)
+
+    const onProgress = () => {
+      const duration = video.duration
+      if (!duration || isNaN(duration)) return
+      const buffered = video.buffered
+      if (buffered.length > 0) {
+        const bufferedEnd = buffered.end(buffered.length - 1)
+        const pct = Math.min(100, (bufferedEnd / duration) * 100)
+        setProgress(Math.floor(pct))
+      }
+    }
+
+    if (isHls && Hls.isSupported()) {
       hls = new Hls({
         maxBufferLength: 120,
         maxMaxBufferLength: 600,
@@ -78,19 +91,16 @@ export default function ScrollVideo({ src, className = '' }) {
         setupScrollTrigger()
       })
 
-      hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        const duration = video.duration
-        if (!duration || isNaN(duration)) return
-        const buffered = video.buffered
-        if (buffered.length > 0) {
-          const bufferedEnd = buffered.end(buffered.length - 1)
-          const pct = Math.min(100, (bufferedEnd / duration) * 100)
-          setProgress(Math.floor(pct))
-        }
-      })
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      hls.on(Hls.Events.FRAG_BUFFERED, onProgress)
+    } else if (isHls && video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = src
       video.addEventListener('loadedmetadata', setupScrollTrigger)
+      video.addEventListener('progress', onProgress)
+    } else {
+      video.src = src
+      video.preload = 'auto'
+      video.addEventListener('loadedmetadata', setupScrollTrigger)
+      video.addEventListener('progress', onProgress)
     }
 
     video.addEventListener('seeked', onSeeked)
