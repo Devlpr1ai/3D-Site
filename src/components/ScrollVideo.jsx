@@ -146,6 +146,7 @@ export default function ScrollVideo({ src, className = '' }) {
           className={`w-full h-full object-cover scale-[1.35] ${className}`}
           muted
           playsInline
+          preload="auto"
           crossOrigin="anonymous"
         />
       </div>
